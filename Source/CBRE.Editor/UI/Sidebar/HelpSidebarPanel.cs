@@ -9,6 +9,11 @@ namespace CBRE.Editor.UI.Sidebar
 {
     public partial class HelpSidebarPanel : UserControl, IMediatorListener
     {
+        private static readonly Regex BoldRegex = new Regex(@"\*(?:\b(?=\w)|(?=\\))(.*?)\b(?!\w)\*", RegexOptions.Compiled);
+        private static readonly Regex BulletRegex = new Regex(@"^\s*-\s+", RegexOptions.Compiled | RegexOptions.Multiline);
+        private static readonly Regex DoubleLinesRegex = new Regex(@"(\r?\n){2,}", RegexOptions.Compiled);
+        private static readonly Regex SingleLinesRegex = new Regex(@"(\r?\n)+", RegexOptions.Compiled);
+        
         public HelpSidebarPanel()
         {
             InitializeComponent();
@@ -54,32 +59,28 @@ namespace CBRE.Editor.UI.Sidebar
         /// <param name="simpleMarkdown"></param>
         private string ConvertSimpleMarkdownToRtf(string simpleMarkdown)
         {
-            /*
-             * {\rtf1\utf8\f0\pard
-             *   This is some {\b bold} text.\par
-             * }";
-             */
-            string escaped = simpleMarkdown
-                .Replace("\\", "\\\\")
-                .Replace("{", "\\{")
-                .Replace("}", "\\}");
-
-            StringBuilder sb = new StringBuilder();
-            foreach (char c in escaped)
+            if (string.IsNullOrEmpty(simpleMarkdown)) return @"{\rtf1\ansi\f0\pard }";
+            
+            StringBuilder sb = new StringBuilder(@"{\rtf1\ansi\f0\pard\sa60 ");
+            foreach (char c in simpleMarkdown)
             {
                 if (c > 127) sb.AppendFormat(@"\u{0}?", (int)c);
-                else if (c == '\\') sb.Append("\\\\");
-                else if (c == '{') sb.Append("\\{");
-                else if (c == '}') sb.Append("\\}");
+                else if (c == '\\') sb.Append(@"\\");
+                else if (c == '{') sb.Append(@"\{");
+                else if (c == '}') sb.Append(@"\}");
                 else sb.Append(c);
             }
 
-            string bolded = Regex.Replace(sb.ToString(), @"\*(?:\b(?=\w)|(?=\\))(.*?)\b(?!\w)\*", @"{\b $1}");
-            string bulleted = Regex.Replace(bolded, @"^\s*-\s+", @" \bullet  ", RegexOptions.Multiline);
-            string paragraphs = Regex.Replace(bulleted, @"(\r?\n){2,}", "\\par\\par ");
-            string lines = Regex.Replace(paragraphs, @"(\r?\n)+", "\\par ");
+            string processed = sb.ToString();
+            
+            processed = BoldRegex.Replace(processed, @"{\b $1}");
+            processed = BulletRegex.Replace(processed, @" \bullet  ");
+            processed = DoubleLinesRegex.Replace(processed, "\\par\\par ");
+            processed = SingleLinesRegex.Replace(processed, "\\par ");
 
-            return @"{\rtf1\ansi\f0\pard\sa60 " + lines + " }";
+            return processed + " }";
         }
+        
+        
     }
 }

@@ -121,12 +121,8 @@ namespace CBRE.Editor.UI.FileSystem
 
         private void UpdateSelection(object sender, EventArgs e)
         {
-            string str = "";
-            foreach (ListViewItem si in FileList.SelectedItems)
-            {
-                str += si.Text + "; ";
-            }
-            SelectionTextbox.Text = str;
+            var selectedTexts = FileList.SelectedItems.Cast<ListViewItem>().Select(x => x.Text);
+            SelectionTextbox.Text = string.Join("; ", selectedTexts);
         }
 
         private void UpButtonClicked(object sender, EventArgs e)
