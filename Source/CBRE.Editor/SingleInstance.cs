@@ -1,45 +1,84 @@
-﻿using CBRE.Settings;
-using Microsoft.VisualBasic.ApplicationServices;
-using System;
+﻿using System;
+using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
+using CBRE.Settings;
 
 namespace CBRE.Editor
 {
-	public class SingleInstance : WindowsFormsApplicationBase
-	{
-		private readonly Type _formType;
-		private static SingleInstance _instance;
+    public static class SingleInstance
+    {
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-		public static void Start(Type formType)
-		{
-			SettingsManager.Read();
-			_instance = new SingleInstance(formType);
-			_instance.IsSingleInstance = CBRE.Settings.View.SingleInstance;
-			_instance.Run(System.Environment.GetCommandLineArgs());
-		}
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
 
-		protected SingleInstance(Type formType)
-		{
-			_formType = formType;
-			IsSingleInstance = true;
-		}
+        [DllImport("user32.dll")]
+        private static extern bool IsIconic(IntPtr hWnd);
 
-		protected override void OnStartupNextInstance(StartupNextInstanceEventArgs e)
-		{
-			e.BringToForeground = true;
-			base.OnStartupNextInstance(e);
-			Editor.ProcessArguments(e.CommandLine.ToArray());
-		}
+        private const int SW_RESTORE = 9;
+        private const int SW_SHOW = 5;
 
-		protected override void OnCreateMainForm()
-		{
-			MainForm = (Form)Activator.CreateInstance(_formType);
-		}
+        private static Mutex _appMutex;
 
-		//protected override void OnCreateSplashScreen()
-		//{
-		//	SplashScreen = new SplashForm();
-		//}
-	}
+        public static void Start(Type formType)
+        {
+            SettingsManager.Read();
+
+            string mutexName = "Global\\CBRE-EX-Editor-Instance-Mutex";
+            _appMutex = new Mutex(true, mutexName, out bool isNewInstance);
+
+            if (!isNewInstance && CBRE.Settings.View.SingleInstance)
+            {;
+                HandleExistingInstance();
+                return;
+            }
+
+            RunApplication(formType);
+            GC.KeepAlive(_appMutex);
+        }
+
+        private static void RunApplication(Type formType)
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+
+            string[] args = System.Environment.GetCommandLineArgs();
+            Editor.ProcessArguments(args);
+
+            using (var mainForm = (Form)Activator.CreateInstance(formType))
+            {
+                Application.Run(mainForm);
+            }
+        }
+
+        private static void HandleExistingInstance()
+        {
+            var current = Process.GetCurrentProcess();
+            var running = Process.GetProcessesByName(current.ProcessName)
+                .FirstOrDefault(p => p.Id != current.Id);
+
+            if (running != null && running.MainWindowHandle != IntPtr.Zero)
+            {
+                IntPtr handle = running.MainWindowHandle;
+
+                if (IsIconic(handle))
+                {
+                    ShowWindowAsync(handle, SW_RESTORE);
+                }
+                else
+                {
+                    ShowWindowAsync(handle, SW_SHOW);
+                }
+
+                SetForegroundWindow(handle);
+            }
+
+            string[] args = System.Environment.GetCommandLineArgs();
+            Editor.ProcessArguments(args);
+        }
+    }
 }
