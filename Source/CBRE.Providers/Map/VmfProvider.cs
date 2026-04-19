@@ -49,36 +49,33 @@ namespace CBRE.Providers.Map
 
         private static void FlattenTree(MapObject parent, List<Solid> solids, List<Entity> entities, List<Group> groups)
         {
-            foreach (MapObject mo in parent.GetChildren())
+            Stack<MapObject> stack = new Stack<MapObject>();
+            stack.Push(parent);
+
+            while (stack.Count > 0)
             {
-                if (mo is Solid)
+                var current = stack.Pop();
+                foreach (var mo in current.GetChildren())
                 {
-                    solids.Add((Solid)mo);
-                }
-                else if (mo is Entity)
-                {
-                    entities.Add((Entity)mo);
-                }
-                else if (mo is Group)
-                {
-                    groups.Add((Group)mo);
-                    FlattenTree(mo, solids, entities, groups);
+                    if (mo is Solid s) solids.Add(s);
+                    else if (mo is Entity e) entities.Add(e);
+                    else if (mo is Group g)
+                    {
+                        groups.Add(g);
+                        stack.Push(g);
+                    }
                 }
             }
         }
 
         private static string FormatCoordinate(Coordinate c)
         {
-            return c.X.ToString("0.00000000")
-                + " " + c.Y.ToString("0.00000000")
-                + " " + c.Z.ToString("0.00000000");
+            return $"{c.X:0.00000000} {c.Y:0.00000000} {c.Z:0.00000000}";
         }
 
         private static string FormatColor(Color c)
         {
-            return c.R.ToString()
-                + " " + c.G.ToString()
-                + " " + c.B.ToString();
+            return $"{c.R} {c.G} {c.B}";
         }
 
         private static readonly string[] ExcludedKeys = new[] { "id", "spawnflags", "classname", "origin", "wad", "mapversion" };

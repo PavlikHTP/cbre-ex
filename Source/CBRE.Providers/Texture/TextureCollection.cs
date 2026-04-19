@@ -24,6 +24,7 @@ namespace CBRE.Providers.Texture
         public ITexture LightmapTexture { get; set; } = null;
 
         private static ulong LastTextureCollectionID = 0;
+        private static readonly char[] IgnoredChars = "{#!~+-0123456789".ToCharArray();
 
         public void UpdateLightmapTexture()
         {
@@ -31,7 +32,8 @@ namespace CBRE.Providers.Texture
             {
                 string texName = LightmapTexture.Name;
                 LightmapTexture.Dispose();
-                LightmapTexture = TextureHelper.Create(texName, Lightmaps[3], Lightmaps[3].Width, Lightmaps[3].Height, TextureFlags.None);
+                LightmapTexture = TextureHelper.Create(texName, Lightmaps[3], Lightmaps[3].Width, Lightmaps[3].Height,
+                    TextureFlags.None);
                 LightmapTextureOutdated = false;
             }
         }
@@ -44,7 +46,8 @@ namespace CBRE.Providers.Texture
                 _selectedTexture = value;
                 if (_selectedTexture != null)
                 {
-                    _recentTextures.RemoveAll(x => String.Equals(x.Name, _selectedTexture.Name, StringComparison.OrdinalIgnoreCase));
+                    _recentTextures.RemoveAll(x =>
+                        String.Equals(x.Name, _selectedTexture.Name, StringComparison.OrdinalIgnoreCase));
                     _recentTextures.Insert(0, _selectedTexture);
                     while (_recentTextures.Count > 25) _recentTextures.RemoveAt(_recentTextures.Count - 1);
                 }
@@ -60,36 +63,42 @@ namespace CBRE.Providers.Texture
                 string k = item.Key.ToLowerInvariant();
                 if (!_items.ContainsKey(k)) _items.Add(k, item.Value);
             }
+
             _recentTextures = new List<TextureItem>();
             SelectedTexture = GetDefaultSelection();
 
             Bitmap bmp = new Bitmap(64, 64);
-            for (int i = 0; i < 64; i++)
+            using (System.Drawing.Graphics g = System.Drawing.Graphics.FromImage(bmp))
             {
-                for (int j = 0; j < 64; j++)
-                {
-                    bmp.SetPixel(i, j, Color.White);
-                }
+                g.Clear(Color.White);
             }
+
             LastTextureCollectionID++;
-            LightmapTexture = TextureHelper.Create("__lightmap" + LastTextureCollectionID.ToString(), bmp, 64, 64, TextureFlags.None);
+            LightmapTexture = TextureHelper.Create("__lightmap" + LastTextureCollectionID.ToString(), bmp, 64, 64,
+                TextureFlags.None);
             bmp.Dispose();
         }
 
         ~TextureCollection()
         {
-            TextureHelper.EnqueueDisposal(LightmapTexture);
-            for (int i = 0; i < 4; i++)
+            if (Lightmaps != null)
             {
-                Lightmaps[i]?.Dispose();
+                for (int i = 0; i < Lightmaps.Length; i++)
+                {
+                    Lightmaps[i]?.Dispose();
+                }
+            }
+
+            if (LightmapTexture != null)
+            {
+                TextureHelper.EnqueueDisposal(LightmapTexture);
             }
         }
 
         private TextureItem GetDefaultSelection()
         {
-            char[] ignored = "{#!~+-0123456789".ToCharArray();
             return GetAllBrowsableItems()
-                .OrderBy(x => new string(x.Name.Where(c => !ignored.Contains(c)).ToArray()) + "Z")
+                .OrderBy(x => new string(x.Name.Where(c => !IgnoredChars.Contains(c)).ToArray()) + "Z")
                 .FirstOrDefault();
         }
 

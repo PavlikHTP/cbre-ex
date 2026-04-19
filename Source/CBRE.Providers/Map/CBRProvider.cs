@@ -93,8 +93,8 @@ namespace CBRE.Providers.Map
             map.WorldSpawn = new World(map.IDGenerator.GetNextObjectID());
 
             // Solids
-            List<MapObject> solids = new List<MapObject>();
             int solidCount = reader.ReadInt32();
+            List<MapObject> solids = new List<MapObject>(solidCount);
             for (int i = 0; i < solidCount; i++)
             {
                 Solid s = new Solid(map.IDGenerator.GetNextObjectID());

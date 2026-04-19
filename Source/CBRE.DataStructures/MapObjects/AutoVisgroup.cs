@@ -1,5 +1,6 @@
 using CBRE.DataStructures.MapObjects.VisgroupFilters;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace CBRE.DataStructures.MapObjects
@@ -8,8 +9,9 @@ namespace CBRE.DataStructures.MapObjects
     {
         public bool IsHidden { get; set; }
         public Func<MapObject, bool> Filter { get; set; }
-
-        public override bool IsAutomatic { get { return true; } }
+        public override bool IsAutomatic => true;
+        
+        private static List<IVisgroupFilter> _cachedFilters;
 
         public override Visgroup Clone()
         {
@@ -27,11 +29,15 @@ namespace CBRE.DataStructures.MapObjects
 
         public static AutoVisgroup GetDefaultAutoVisgroup()
         {
-            System.Collections.Generic.IEnumerable<IVisgroupFilter> filters = typeof(IVisgroupFilter).Assembly.GetTypes()
-                .Where(x => typeof(IVisgroupFilter).IsAssignableFrom(x))
-                .Where(x => !x.IsInterface)
-                .Select(Activator.CreateInstance)
-                .OfType<IVisgroupFilter>();
+            if (_cachedFilters == null)
+            {
+                _cachedFilters = typeof(IVisgroupFilter).Assembly.GetTypes()
+                    .Where(x => typeof(IVisgroupFilter).IsAssignableFrom(x) && !x.IsInterface && !x.IsAbstract)
+                    .Select(Activator.CreateInstance)
+                    .OfType<IVisgroupFilter>()
+                    .ToList();
+            }
+            
             int i = -1;
             AutoVisgroup auto = new AutoVisgroup
             {
@@ -40,7 +46,7 @@ namespace CBRE.DataStructures.MapObjects
                 Name = "Auto",
                 Visible = true
             };
-            foreach (IVisgroupFilter f in filters)
+            foreach (IVisgroupFilter f in _cachedFilters)
             {
                 AutoVisgroup parent = auto.Children.OfType<AutoVisgroup>().FirstOrDefault(x => x.Name == f.Group);
                 if (parent == null)

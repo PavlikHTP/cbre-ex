@@ -72,40 +72,29 @@ namespace CBRE.DataStructures.MapObjects
 
         public IEnumerable<MapFeature> GetUsedFeatures()
         {
-            List<MapObject> all = WorldSpawn.FindAll();
+            var all = WorldSpawn.FindAll();
+            
+            bool hasSolids = false, hasEntities = false, hasGroups = false; bool hasDisplacements = false, hasMultiVis = false;
 
-            // Too generic: this should be assumed
-            // yield return MapFeature.Worldspawn;
+            foreach (var obj in all)
+            {
+                if (obj is Solid s) {
+                    hasSolids = true;
+                    if (!hasDisplacements && s.Faces.Any(f => f is Displacement)) hasDisplacements = true;
+                }
+                else if (obj is Entity) hasEntities = true;
+                else if (obj is Group) hasGroups = true;
 
-            if (all.Any(x => x is Solid))
-                yield return MapFeature.Solids;
+                if (obj.Visgroups.Count > 1) hasMultiVis = true;
+            }
 
-            if (all.Any(x => x is Entity))
-                yield return MapFeature.Entities;
-
-            if (all.Any(x => x is Group))
-                yield return MapFeature.Groups;
-
-            if (all.OfType<Solid>().Any(x => x.Faces.Any(y => y is Displacement)))
-                yield return MapFeature.Displacements;
-
-            // Not implemented yet
-            // yield return MapFeature.Instances;
-
-            if (Visgroups.Any())
-                yield return MapFeature.SingleVisgroups;
-
-            if (all.Any(x => x.Visgroups.Count > 1))
-                yield return MapFeature.MultipleVisgroups;
-
-            // If we have more than one camera, we care about losing them
-            if (Cameras.Count > 1)
-                yield return MapFeature.Cameras;
-
-            // Not important enough to care about:
-            // yield return MapFeature.Colours;
-            // yield return MapFeature.CordonBounds;
-            // yield return MapFeature.ViewSettings;
+            if (hasSolids) yield return MapFeature.Solids;
+            if (hasEntities) yield return MapFeature.Entities;
+            if (hasGroups) yield return MapFeature.Groups;
+            if (hasDisplacements) yield return MapFeature.Displacements;
+            if (Visgroups.Any()) yield return MapFeature.SingleVisgroups;
+            if (hasMultiVis) yield return MapFeature.MultipleVisgroups;
+            if (Cameras.Count > 1) yield return MapFeature.Cameras;
         }
 
         public TransformFlags GetTransformFlags()
@@ -118,26 +107,36 @@ namespace CBRE.DataStructures.MapObjects
 
         public IEnumerable<string> GetAllTextures()
         {
-            return GetAllTexturesRecursive(WorldSpawn).Distinct();
+            // HashSet сразу отсекает дубликаты и делает это быстро
+            var textures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            FillTexturesRecursive(WorldSpawn, textures);
+            return textures;
         }
 
-        private static IEnumerable<string> GetAllTexturesRecursive(MapObject obj)
+        private static void FillTexturesRecursive(MapObject obj, HashSet<string> set)
         {
-            if (obj is Entity && obj.ChildCount == 0)
+            if (obj == null) return;
+            
+            if (obj is Entity ent && obj.ChildCount == 0)
             {
-                Entity ent = (Entity)obj;
                 if (ent.EntityData.Name == "infodecal")
                 {
-                    Property tex = ent.EntityData.Properties.FirstOrDefault(x => x.Key == "texture");
-                    if (tex != null) return new[] { tex.Value };
+                    var tex = ent.EntityData.Properties.FirstOrDefault(x => x.Key == "texture");
+                    if (tex != null) set.Add(tex.Value);
                 }
             }
-            else if (obj is Solid)
+            else if (obj is Solid s)
             {
-                return ((Solid)obj).Faces.Select(f => f.Texture.Name);
+                foreach (var face in s.Faces)
+                {
+                    if (face.Texture != null) set.Add(face.Texture.Name);
+                }
             }
-
-            return obj.GetChildren().SelectMany(GetAllTexturesRecursive);
+            
+            foreach (var child in obj.GetChildren())
+            {
+                FillTexturesRecursive(child, set);
+            }
         }
 
         /// <summary>
@@ -180,37 +179,62 @@ namespace CBRE.DataStructures.MapObjects
 
         public void UpdateAutoVisgroups(IEnumerable<MapObject> nodes, bool recursive)
         {
-            List<AutoVisgroup> autos = GetAllVisgroups().OfType<AutoVisgroup>().Where(x => x.Filter != null).ToList();
+            if (nodes == null) return;
+
+            var allVisgroups = GetAllVisgroups();
+            if (allVisgroups == null) return;
+
+            AutoVisgroup[] autos = allVisgroups.OfType<AutoVisgroup>().Where(x => x.Filter != null).ToArray();
             IEnumerable<MapObject> list = recursive ? nodes.SelectMany(x => x.FindAll()) : nodes;
-            foreach (MapObject o in list)
+
+            Parallel.ForEach(list, o =>
             {
-                MapObject obj = o;
-                obj.Visgroups.RemoveAll(x => o.AutoVisgroups.Contains(x));
-                obj.AutoVisgroups.Clear();
-                foreach (AutoVisgroup vg in autos.Where(x => x.Filter(obj)))
+                if (o == null || o.Visgroups == null || o.AutoVisgroups == null) return;
+
+                o.Visgroups.RemoveAll(x => o.AutoVisgroups.Contains(x));
+                o.AutoVisgroups.Clear();
+
+                for (int i = 0; i < autos.Length; i++)
                 {
-                    // Add this visgroup and all parents
-                    Visgroup visgroup = vg;
-                    while (visgroup != null)
+                    AutoVisgroup vg = autos[i];
+                    try 
                     {
-                        if (o.AutoVisgroups.Contains(visgroup.ID)) break; // Break out of infinite loop (just in case)
-                        o.AutoVisgroups.Add(visgroup.ID);
-                        visgroup = visgroup.Parent;
+                        if (vg.Filter(o))
+                        {
+                            Visgroup visgroup = vg;
+                            while (visgroup != null)
+                            {
+                                if (o.AutoVisgroups.Contains(visgroup.ID)) break;
+                                o.AutoVisgroups.Add(visgroup.ID);
+                                visgroup = visgroup.Parent;
+                            }
+                        }
                     }
+                    catch { }
                 }
+        
                 o.Visgroups.AddRange(o.AutoVisgroups);
-            }
+            });
         }
 
         public IEnumerable<Visgroup> GetAllVisgroups()
         {
-            return GetAllVisgroups(Visgroups);
-        }
+            var result = new List<Visgroup>();
+            if (Visgroups == null || !Visgroups.Any()) return result;
+            
+            var stack = new Stack<Visgroup>(Visgroups);
 
-        private IEnumerable<Visgroup> GetAllVisgroups(IEnumerable<Visgroup> groups)
-        {
-            List<Visgroup> g = groups.ToList();
-            return g.SelectMany(x => GetAllVisgroups(x.Children)).Union(g);
+            while (stack.Count > 0)
+            {
+                var current = stack.Pop();
+                result.Add(current);
+                
+                if (current.Children != null)
+                {
+                    foreach (var child in current.Children) stack.Push(child);
+                }
+            }
+            return result;
         }
 
         public void PartialPostLoadProcess(GameData.GameData gameData, Func<string, ITexture> textureAccessor, Func<string, float> textureOpacity)

@@ -440,7 +440,7 @@ namespace CBRE.DataStructures.MapObjects
         public MapObject FindByID(long id)
         {
             if (ID == id) return this;
-            if (Children.ContainsKey(id)) return Children[id];
+            if (Children.TryGetValue(id, out var child)) return child;
             foreach (MapObject mo in GetChildren())
             {
                 MapObject by = mo.FindByID(id);
